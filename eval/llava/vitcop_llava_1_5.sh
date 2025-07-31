@@ -1,4 +1,4 @@
-#!bin/bash
+#!/bin/bash
 set -x
 EXP_TABLE=coco2017_cap_val,flickr30k_test,gqa,mmbench_en_dev,mme,nocaps_val,ok_vqa_val2014,pope,qbench_dev,scienceqa_img,vqav2_val_lite
 LOG_DIR=./logs/vitcop
@@ -7,15 +7,15 @@ RUN_NAME=vitcop_llava_1.5_7b
 
 ################################################
 ## VITCOP
-## A、B、C 分别对应三次剪枝的比例
-## 剪枝率计算 rato = (SHALLOW_PRUNED_LAYER * A +  (DEEP_PRUNED_LAYER - SHALLOW_PRUNED_LAYER) * B + (32 - DEEP_PRUNED_LAYER) * C) / 32
-## 对应剪枝率 1/3，2/9，1/9
+## A, B, and C correspond to the three pruning ratios.
+## Pruning rate calculation: ratio = (SHALLOW_PRUNED_LAYER * A + (DEEP_PRUNED_LAYER - SHALLOW_PRUNED_LAYER) * B + (32 - DEEP_PRUNED_LAYER) * C) / 32
+## The corresponding pruning rates are 1/3, 2/9, 1/9.
 RATIO=("1_3" "2_9" "1_9")
 PRUNED_RARIOS=(0.3333 0.2222 0.1111)
 VISION_PRUNE_RARIOS=(0.5 0.4 0.3)
 CLUSTER_PERCENTAGES=(0.18 0.15 0.12)
 SHALLOW_PRUNED_LAYER=2
-DEEP_PRUNED_LAYER=22  
+DEEP_PRUNED_LAYER=22
 ################################################
 
 for ((i=0; i<${#RATIO[@]}; i++)); do
@@ -32,7 +32,7 @@ for ((i=0; i<${#RATIO[@]}; i++)); do
         -m lmms_eval \
         --model llava \
         --model_args pretrained=$MODEL_NAME \
-        --tasks vqav2_val_lite \
+        --tasks gqa_lite \
         --batch_size 1 \
         --log_samples \
         --log_samples_suffix ${RUN_NAME}_${RATIO_VALUE} \

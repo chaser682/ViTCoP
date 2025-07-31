@@ -1041,13 +1041,13 @@ class LlamaModel(LlamaPreTrainedModel):
         ## TODO
         ####################################################################################
         ## VITCOP
-        self.use_vitcop = os.environ.get("USE_VITCOP", "False") == "True" # 是否使用多层次剪枝
-        self.shallow_pruned_layer = int(os.environ.get("SHALLOW_PRUNED_LAYER", "2"))  # 浅层剪枝
-        self.deep_pruned_layer = int(os.environ.get("DEEP_PRUNED_LAYER", "22")) # 深层剪枝
-        self.vitcop_pruned_ratio = float(os.environ.get("VITCOP_PRUNED_RARIO", "0.25"))  # 总体剪枝比例
-        self.vision_prune_ratio = float(os.environ.get('VISION_PRUNE_RARIO', "0.5"))  # vit层保留比例
+        self.use_vitcop = os.environ.get("USE_VITCOP", "False") == "True" # Whether to use multi-level pruning
+        self.shallow_pruned_layer = int(os.environ.get("SHALLOW_PRUNED_LAYER", "2"))   # Shallow layer pruning
+        self.deep_pruned_layer = int(os.environ.get("DEEP_PRUNED_LAYER", "22")) # Deep layer pruning
+        self.vitcop_pruned_ratio = float(os.environ.get("VITCOP_PRUNED_RARIO", "0.25"))   # Overall pruning ratio
+        self.vision_prune_ratio = float(os.environ.get('VISION_PRUNE_RARIO', "0.5"))   # Retention ratio for ViT layers
 
-        self.compute_efficiency = os.environ.get("COMPUTE_EFFICIENCY", "False") == "True"  # 是否计算FLOPs、Prefill Latency、Inference Latency（per token）
+        self.compute_efficiency = os.environ.get("COMPUTE_EFFICIENCY", "False") == "True"   # Whether to compute FLOPs, Prefill Latency, Inference Latency (per token)
         self.prefill_time = 0
         self.all_FLOPs = 0
         self.num_forward = 0
@@ -1161,11 +1161,11 @@ class LlamaModel(LlamaPreTrainedModel):
             total_start_event.record()
 
         for decoder_layer in self.layers:
-            ## 计算FLOPs、Prefill Latency、Inference Latency（per token）
-            if self.compute_efficiency and (len(pre_prompt_length_list) != 0 and hidden_states.shape[1] != 1):       
-                n = hidden_states.shape[1]                                  # token num
-                d = hidden_states.shape[2]                                  # hidden state size 
-                m = self.layers[decoder_layer.self_attn.layer_idx].mlp.up_proj.out_features         # intermediate size of the FFN
+            ## Compute FLOPs, Prefill Latency, Inference Latency (per token)
+            if self.compute_efficiency and (len(pre_prompt_length_list) != 0 and hidden_states.shape[1] != 1):     
+                n = hidden_states.shape[1]                                      # number of tokens
+                d = hidden_states.shape[2]                                      # hidden state size 
+                m = self.layers[decoder_layer.self_attn.layer_idx].mlp.up_proj.out_features       # intermediate size of the FFN
                 self.all_FLOPs += 4 * n * (d**2) + 2 *(n**2) * d + 3*n*d*m 
 
             if output_hidden_states:
@@ -1186,36 +1186,36 @@ class LlamaModel(LlamaPreTrainedModel):
             ########################################################################################################################
             ## VITCOP
             elif self.use_vitcop:
-                ## 根据视觉的先验信息空间相似度聚类簇 以及 文本语义的注意力得分 来进行剪枝
-                ### 基于L2范数的剪枝
+                ## Prune based on spatial similarity clustering from visual priors and attention scores from text semantics
+                ### Pruning based on L2 norm
                 def token_filter_l2_norm_cluster(cluster_labels, l2_norm, R, visual_start):
                     """
-                    基于图像token键值L2范数进行token筛选，选择前k小的值
+                    Filter tokens based on the L2 norm of image token key values, selecting the top k smallest values.
                     
                     Args:
-                        cluster_labels: 聚类标签
-                        l2_norm: 图像token的键值L2范数 
-                        R: 需要保留的token数量
-                        visual_start: 视觉token的起始位置
+                        cluster_labels: Cluster labels.
+                        l2_norm: L2 norm of the key values for image tokens.
+                        R: Number of tokens to keep.
+                        visual_start: Starting position of visual tokens.
                     """
                     device = l2_norm.device
                     cluster_mask = cluster_labels >= -1
                     labels = torch.unique(cluster_labels[cluster_mask])
-                    K = labels.size(0)  # 簇的数量
+                    K = labels.size(0)  # Number of clusters
                     
-                    # 计算每个簇的L2范数总和（注意：这里仍然是求和，但后续筛选时会选择最小值）
+                    # Calculate the sum of L2 norms for each cluster (Note: this is still a sum, but the smallest values will be selected later)
                     cluster_l2_sum = torch.stack([l2_norm[cluster_labels == cid].sum() for cid in labels])
                     sizes = torch.tensor([(cluster_labels == cid).sum() for cid in labels], device=device)
                     
                     selected_abs, merged_groups, merged_positions = [], [], []
                     
                     if K > R:
-                        # 情况1: 选择前 R-1 个L2范数总和最小的簇，各自合并为 1 个token，其余所有簇合并为1个token
-                        topk_indices = torch.topk(cluster_l2_sum, k=R-1, largest=False).indices  # 选择最小的
+                        # Case 1: Select the R-1 clusters with the smallest L2 norm sums, merge each into 1 token, and merge all remaining clusters into 1 token.
+                        topk_indices = torch.topk(cluster_l2_sum, k=R-1, largest=False).indices  # Select the smallest
                         retained_cids = labels[topk_indices]
                         merged_cids = [cid for cid in labels.tolist() if cid not in retained_cids.tolist()]
                         
-                        # 前 R-1 个L2范数最小的簇，每个簇合并为一个 token
+                        # The R-1 clusters with the smallest L2 norms, each merged into a single token
                         for cid in retained_cids:
                             abs_indices = (cluster_labels == cid).nonzero(as_tuple=False).squeeze(1)
                             merged_groups.append((abs_indices + visual_start).tolist())
@@ -1223,7 +1223,7 @@ class LlamaModel(LlamaPreTrainedModel):
                             mid_idx = len(sorted_idx) // 2
                             merged_positions.append(sorted_idx[mid_idx].item() + visual_start)
                         
-                        # 剩余所有簇统一合并为一个 token
+                        # Merge all remaining clusters into a single token
                         merged_indices = torch.cat([(cluster_labels == cid).nonzero(as_tuple=False).squeeze(1) for cid in merged_cids])
                         if merged_indices.numel() > 0:
                             merged_groups.append((merged_indices + visual_start).tolist())
@@ -1231,23 +1231,23 @@ class LlamaModel(LlamaPreTrainedModel):
                             mid_idx = len(sorted_idx) // 2
                             merged_positions.append(sorted_idx[mid_idx].item() + visual_start)
                     else:
-                        # 情况2: 每个簇合并为1个token，然后从簇中选出 R-K 个 token 作为保留token
-                        # 获取每个簇的大小
+                        # Case 2: Merge each cluster into 1 token, then select R-K tokens from the clusters to be kept individually.
+                        # Get the size of each cluster
                         cluster_sizes = torch.stack([
                             (cluster_labels == label).sum() for label in labels
                         ])  # shape: [K]
                         
-                        # 所有被分簇的 token 总数
+                        # Total number of tokens in all clusters
                         total_cluster_tokens = cluster_sizes.sum()
                         weights = (cluster_sizes.float() - 1) / (total_cluster_tokens - K)
                         initial_quota = (weights * (R - K)).round().to(torch.long)
-                        max_quota = torch.clamp(sizes - 1, min=0)  # 限制不能选满，至少留一个 token 用于合并
+                        max_quota = torch.clamp(sizes - 1, min=0)  # Limit selection to leave at least one token for merging
                         quotas = torch.minimum(initial_quota, max_quota)
                         
-                        # 调整 quota 使总和为 R - K
+                        # Adjust quotas so that their sum is R - K
                         diff = (R - K) - quotas.sum().item()
                         if diff != 0:
-                            # 基于L2范数排序：diff > 0时按升序(优先选择L2范数小的)，diff < 0时按降序
+                            # Sort based on L2 norm: ascending if diff > 0 (prioritize smaller L2 norms), descending if diff < 0
                             sort_idx = torch.argsort(cluster_l2_sum, descending=(diff < 0))
                             for i in sort_idx:
                                 if diff > 0 and quotas[i] < max_quota[i]:
@@ -1259,26 +1259,26 @@ class LlamaModel(LlamaPreTrainedModel):
                                 if diff == 0:
                                     break
                         
-                        # 执行合并与保留逻辑
+                        # Execute merge and keep logic
                         for i, cid in enumerate(labels):
                             abs_indices = (cluster_labels == cid).nonzero(as_tuple=False).squeeze(1)
                             size = abs_indices.size(0)
                             
-                            # 选出保留 token（选择L2范数最小的）
+                            # Select tokens to keep (choosing those with the smallest L2 norm)
                             keep_count = min(quotas[i].item(), size - 1)
                             if keep_count > 0:
-                                # 选择L2范数最小的前keep_count个token
+                                # Select the top keep_count tokens with the smallest L2 norm
                                 _, topk_idx = torch.topk(l2_norm[abs_indices], k=keep_count, largest=False)
                                 top_indices = abs_indices[topk_idx]
                                 selected_abs.extend((top_indices + visual_start).tolist())
-                                # 去除被保留的 token，剩下的用于合并
+                                # Remove the kept tokens, the rest are for merging
                                 keep_mask = torch.ones(size, dtype=torch.bool, device=device)
                                 keep_mask[topk_idx] = False
                                 merge_indices = abs_indices[keep_mask]
                             else:
-                                merge_indices = abs_indices  # 全部合并
+                                merge_indices = abs_indices  # Merge all
                             
-                            # 合并剩下的 token
+                            # Merge the remaining tokens
                             if merge_indices.numel() > 0:
                                 merged_groups.append((merge_indices + visual_start).tolist())
                                 sorted_idx = torch.sort(merge_indices).values
@@ -1291,19 +1291,19 @@ class LlamaModel(LlamaPreTrainedModel):
                 text_token_start = v_token_start + image_shape # 611
                 text_token_num = seq_length - text_token_start
                 v_token_num = image_shape
-                ## 根据总体剪枝率计算浅层和深层剪枝的token数量
+                ## Calculate the number of tokens for shallow and deep pruning based on the overall pruning ratio
                 shallow_token_num = round((32 * self.vitcop_pruned_ratio / self.vision_prune_ratio - self.shallow_pruned_layer) / (self.deep_pruned_layer - self.shallow_pruned_layer + (32 - self.deep_pruned_layer) / 5) * v_token_num)
                 deep_token_num = round(shallow_token_num / 5)
                 # print(f"token_length_list : {token_length_list}, pre_prompt_length_list: {pre_prompt_length_list}")
                 # print(decoder_layer.self_attn.layer_idx, shallow_token_num, deep_token_num, hidden_states.shape, v_token_start, text_token_start, v_token_num)
 
-                # 浅层剪枝逻辑（根据空间相似度聚类簇进行剪枝）
+                # Shallow pruning logic (pruning based on spatial similarity clusters)
                 if decoder_layer.self_attn.layer_idx == self.shallow_pruned_layer and seq_length > 1:
                     device = hidden_states.device
                     visual_start = v_token_start
                     visual_end = v_token_start + v_token_num
 
-                    # 获取k_shallow 的 L2 范数，根据视觉token聚类信息以及k_shallow 的 L2 范数剪枝
+                    # Get the L2 norm of k_shallow, and prune based on visual token cluster information and the L2 norm of k_shallow
                     image_k_l2_norm = self.k_shallow.mean(dim=1).norm(p=2, dim=-1)[0][visual_start:visual_end]
 
                     selected_abs, merged_groups, merged_positions = token_filter_l2_norm_cluster(
@@ -1313,7 +1313,7 @@ class LlamaModel(LlamaPreTrainedModel):
                         visual_start
                     )
 
-                    # 构建所有位置索引
+                    # Build all position indices
                     non_visual_before = torch.arange(0, visual_start, device=device)
                     non_visual_after = torch.arange(visual_end, hidden_states.shape[1], device=device)
 
@@ -1321,7 +1321,7 @@ class LlamaModel(LlamaPreTrainedModel):
                     merged_positions_tensor = torch.tensor(merged_positions, device=device, dtype=torch.long)
 
 
-                    # 创建 merged_tokens: 每个 group 合并为一个 token（均值）
+                    # Create merged_tokens: each group is merged into a single token (by averaging)
                     merged_tokens = []
                     for i, group in enumerate(merged_groups):
                         group_tensor = torch.tensor(group, device=device, dtype=torch.long)
@@ -1330,55 +1330,55 @@ class LlamaModel(LlamaPreTrainedModel):
 
                     merged_tokens_tensor = torch.cat(merged_tokens, dim=1) if merged_tokens else torch.empty(0, device=device)
 
-                    # 创建 selected_tokens
+                    # Create selected_tokens
                     selected_tokens_tensor = hidden_states[:, selected_abs_tensor, :] if selected_abs else torch.empty(0, device=device)
 
-                    # 提取非视觉 token
+                    # Extract non-visual tokens
                     non_visual_before_tensor = hidden_states[:, non_visual_before, :]
                     non_visual_after_tensor = hidden_states[:, non_visual_after, :]
 
-                    # 合并 token 按照顺序拼接：非视觉前 + 保留的 token + 合并 token + 非视觉后
-                    # 注意：需要根据合并后的位置顺序，重新排序 selected 和 merged token
+                    # Concatenate tokens in order: non-visual-before + kept tokens + merged tokens + non-visual-after
+                    # Note: a re-sorting of selected and merged tokens is needed based on their post-merge positions
 
-                    # 合并位置和 token
+                    # Merge positions and tokens
                     mid_positions = torch.cat([selected_abs_tensor, merged_positions_tensor])
                     mid_tokens = torch.cat([selected_tokens_tensor, merged_tokens_tensor], dim=1)
 
-                    # 获取排序索引
+                    # Get sorting indices
                     sorted_mid, indices = torch.sort(mid_positions)
                     mid_tokens_sorted = mid_tokens[:, indices, :]
 
-                    # 最终拼接
+                    # Final concatenation
                     hidden_states = torch.cat([non_visual_before_tensor,mid_tokens_sorted,non_visual_after_tensor], dim=1)
-                    # 更新 position_ids
+                    # Update position_ids
                     position_ids = torch.cat([non_visual_before,sorted_mid,non_visual_after], dim=0).unsqueeze(0)
                     # position_ids = position_ids[:, :hidden_states.shape[1]]
 
                     if attention_mask is not None:
                         attention_mask = attention_mask[:, :, :hidden_states.shape[1], :hidden_states.shape[1]]
 
-                # 深层剪枝逻辑（全局剪枝）
+                # Deep pruning logic (global pruning)
                 if decoder_layer.self_attn.layer_idx == self.deep_pruned_layer and seq_length > 1:
                     device = hidden_states.device
                     visual_start = v_token_start
                     visual_end = v_token_start + shallow_token_num
                     
-                    # 获取 k_deep 的 L2 范数并剪枝
+                    # Get the L2 norm of k_deep and prune
                     image_k_l2_norm = self.k_deep.mean(dim=1).norm(p=2, dim=-1)[0][visual_start:visual_end]
                     topk = torch.topk(image_k_l2_norm, deep_token_num, largest=False).indices
                     
-                    # 合并索引并更新
-                    selected_indices = topk + visual_start  # 已是 CUDA Tensor
+                    # Merge indices and update
+                    selected_indices = topk + visual_start  # Already a CUDA Tensor
 
-                    # 构建非视觉区域索引
+                    # Build non-visual region indices
                     # print(shallow_token_num, deep_token_num, visual_start, visual_end, text_token_num, hidden_states.shape)
                     non_visual_before = torch.arange(0, visual_start, device=device)
                     non_visual_after = torch.arange(visual_end, hidden_states.shape[1], device=device)
 
-                    # 合并所有需要保留的位置索引，并排序
+                    # Concatenate all indices to be kept, and sort them
                     all_keep = torch.cat([non_visual_before, selected_indices, non_visual_after]).unique(sorted=True)
 
-                    # 使用 all_keep 更新 hidden_states 和 position_ids
+                    # Use all_keep to update hidden_states and position_ids
                     hidden_states = hidden_states.index_select(1, all_keep)
                     position_ids = all_keep.unsqueeze(0)
                     # position_ids = position_ids[:, :hidden_states.shape[1]]
@@ -1387,7 +1387,7 @@ class LlamaModel(LlamaPreTrainedModel):
                         attention_mask = attention_mask[:, :, :hidden_states.shape[1], :hidden_states.shape[1]]
                     
 
-                # 生成阶段（seq_length=1）的注意力掩码调整
+                # Attention mask adjustment for the generation phase (seq_length=1)
                 if decoder_layer.self_attn.layer_idx == self.shallow_pruned_layer and seq_length == 1:
                     if attention_mask is not None:
                         past_key_values_length = past_key_values.get_usable_length(seq_length, self.shallow_pruned_layer)
@@ -1439,7 +1439,7 @@ class LlamaModel(LlamaPreTrainedModel):
             self.prefill_time += prefill_time_ms
             self.num_forward += 1
             FLOPs_avg_sample = (self.all_FLOPs / self.num_forward) * 1e-12
-            ## 计算 max GPU mem and  TFLOPs and prefill_time
+            ## Calculate max GPU mem, TFLOPs, and prefill_time
             self.max_gpu_mem = max(self.max_gpu_mem, torch.cuda.max_memory_allocated() / 1024 / 1024)
             print(f"TFLOPs_avg_sample:{FLOPs_avg_sample},prefill_time:{self.prefill_time}, prefill_time_avg:{self.prefill_time / self.num_forward}, max_gpu_mem:{self.max_gpu_mem}MB")
 
@@ -1449,7 +1449,7 @@ class LlamaModel(LlamaPreTrainedModel):
             inference_time_ms = total_start_event.elapsed_time(total_end_event)
             self.inference_time_per_token += inference_time_ms
             self.num_token += 1
-            ## 计算inference_time
+            ## Calculate inference_time
             print(f"inference_time_per_token:{self.inference_time_per_token}, inference_time_avg:{self.inference_time_per_token / self.num_token}")
 
         hidden_states = self.norm(hidden_states)

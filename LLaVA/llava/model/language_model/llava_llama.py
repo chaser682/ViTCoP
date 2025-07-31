@@ -27,7 +27,6 @@ from transformers.generation.utils import GenerateOutput
 # from ..llava_arch import LlavaMetaModel, LlavaMetaForCausalLM
 from ..vitcop_llava_arch import LlavaMetaModel, LlavaMetaForCausalLM
 
-# 注意路径问题，需要使用绝对路径，否则破坏了包的结构
 from .vitcop_modeling_llama import LlamaModel as FastVLLamaModel, \
     LlamaForCausalLM as FastVLlamaForCausalLM
 import os

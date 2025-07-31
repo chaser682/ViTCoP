@@ -13,6 +13,19 @@ def hook_k(module, input, output):
 def hook_q(module, input, output):
     outputs['desired_q'] = output
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
+import os
+from transformers import CLIPVisionConfig, CLIPImageProcessor, CLIPVisionModel
+
+# A placeholder hook function - the original was not provided.
+def hook_k(module, input, output):
+    if "outputs" not in globals():
+        globals()["outputs"] = {}
+    globals()["outputs"]["desired_k"] = output
+
 class CLIPVisionTower(nn.Module):
     def __init__(self, vision_tower, args, delay_load=False):
         super().__init__()
@@ -34,8 +47,8 @@ class CLIPVisionTower(nn.Module):
         ###################################################################################
         ## VITCOP
         self.use_vitcop = os.environ.get('USE_VITCOP', 'False') == 'True'
-        self.vision_prune_ratio = float(os.environ.get('VISION_PRUNE_RARIO', 0.2))  # 初始剪枝比例
-        self.cluster_percentage = float(os.environ.get('CLUSTER_PERCENTAGE', 0.08))  # 聚类中心点百分比数量
+        self.vision_prune_ratio = float(os.environ.get('VISION_PRUNE_RARIO', 0.5))  # Initial pruning ratio
+        self.cluster_percentage = float(os.environ.get('CLUSTER_PERCENTAGE', 0.18))  # Percentage of points to be cluster centers
         ## VITCOP
         ###################################################################################
 
@@ -65,63 +78,63 @@ class CLIPVisionTower(nn.Module):
     ## VITCOP
     def compute_adaptive_threshold(self, attention_scores: torch.Tensor) -> float:
         """
-        基于注意力分布计算自适应阈值
+        Compute an adaptive threshold based on the attention distribution.
         
         Args:
-            attention_scores: CLS token的注意力得分 [num_tokens]
+            attention_scores: Attention scores of the CLS token [num_tokens].
             
         Returns:
-            adaptive_prune_ratio: 自适应剪枝比例 (0.1, 0.3)
+            adaptive_prune_ratio: Adaptive pruning ratio (between 0.1 and 0.3).
         """
-        # 计算注意力分布的熵
+        # Calculate the entropy of the attention distribution
         probs = F.softmax(attention_scores, dim=0)
         entropy = -torch.sum(probs * torch.log(probs + 1e-8))
         
-        # 计算方差
+        # Calculate the variance
         variance = torch.var(attention_scores)
         
-        # 根据熵和方差调整剪枝比例
-        # 高熵(信息均匀分布)和低方差时减少剪枝
-        # 低熵(信息集中)和高方差时增加剪枝
+        # Adjust the pruning ratio based on entropy and variance
+        # High entropy (uniform information distribution) and low variance lead to less pruning.
+        # Low entropy (concentrated information) and high variance lead to more pruning.
         entropy_norm = entropy / np.log(len(attention_scores))
         variance_norm = variance / torch.max(attention_scores)
         
         adaptive_ratio = self.initial_prune_ratio * (2 - entropy_norm) * (1 + variance_norm)
-        adaptive_ratio = torch.clamp(adaptive_ratio, 0.1, 0.3)  # 限制在合理范围
+        adaptive_ratio = torch.clamp(adaptive_ratio, 0.1, 0.3)  # Clamp to a reasonable range
         
         return adaptive_ratio.item()
     
     def cluster_visual_tokens(self, 
-                             visual_tokens: torch.Tensor,
-                             positions: torch.Tensor,
-                             kept_indices: torch.Tensor,
-                             cluster_method: str = "hierarchical") -> dict:
+                              visual_tokens: torch.Tensor,
+                              positions: torch.Tensor,
+                              kept_indices: torch.Tensor,
+                              cluster_method: str = "hierarchical") -> dict:
         """
-        基于空间位置和特征相似度进行聚类
+        Cluster based on spatial location and feature similarity.
         
         Args:
-            visual_tokens: 视觉token特征 [num_tokens, hidden_dim]
-            positions: token的空间位置 [num_tokens, 2] (x, y)
-            kept_indices: 保留的token索引
-            cluster_method: 聚类方法 ("hierarchical", "kmeans", "dbscan")
+            visual_tokens: Visual token features [num_tokens, hidden_dim].
+            positions: Spatial positions of tokens [num_tokens, 2] (x, y).
+            kept_indices: Indices of the tokens to be kept.
+            cluster_method: Clustering method ("hierarchical", "kmeans", "dbscan").
             
         Returns:
-            cluster_info: 包含聚类结果的字典
+            cluster_info: A dictionary containing the clustering results.
         """
         kept_tokens = visual_tokens[kept_indices]
         kept_positions = positions[kept_indices]
         
-        # 标准化特征和位置
+        # Normalize features and positions
         tokens_norm = F.normalize(kept_tokens, p=2, dim=1)
         pos_norm = (kept_positions - kept_positions.mean(dim=0)) / (kept_positions.std(dim=0) + 1e-8)
         
-        # 组合特征：拼接标准化后的视觉特征和位置特征
+        # Combine features: concatenate normalized visual and position features
         combined_features = torch.cat([
             tokens_norm * self.feature_weight,
             pos_norm * self.spatial_weight
         ], dim=1)
         
-        # 转换为numpy进行聚类
+        # Convert to numpy for clustering
         features_np = combined_features.cpu().numpy()
         
         if cluster_method == "hierarchical":
@@ -133,17 +146,17 @@ class CLIPVisionTower(nn.Module):
         else:
             raise ValueError(f"Unsupported clustering method: {cluster_method}")
         
-        # 组织聚类结果
+        # Organize clustering results
         cluster_groups = {}
         for token_idx, cluster_id in enumerate(clusters):
             if cluster_id not in cluster_groups:
                 cluster_groups[cluster_id] = []
             cluster_groups[cluster_id].append(token_idx)
         
-        # 转换为列表格式，过滤噪声点（cluster_id = -1）
+        # Convert to list format, filtering out noise points (cluster_id = -1)
         cluster_list = [group for cluster_id, group in cluster_groups.items() if cluster_id != -1]
         
-        # 计算聚类质量指标
+        # Calculate clustering quality metrics
         cluster_quality = self._evaluate_clustering_quality(features_np, clusters)
         
         return {
@@ -154,7 +167,7 @@ class CLIPVisionTower(nn.Module):
             'num_clusters': len(cluster_list)
         }
     
-    def get_pos(self, X, W = 24, H = 24):
+    def get_pos(self, X, W=24, H=24):
         n_samples = X.shape[1]
 
         assert n_samples == W * H, f"Number of samples {n_samples} not equal grid size {W}*{H}={W*H}"
@@ -166,24 +179,24 @@ class CLIPVisionTower(nn.Module):
         )
 
         pos = torch.stack([yy, xx], dim=-1).reshape(-1, 2).float()
-        # 归一化到[0,1)范围附近，原代码的归一化方式
+        # Normalize to a range around [0,1), following the original code's normalization method
         pos_norm = pos / torch.tensor([H, W], device=X.device, dtype=torch.float)
 
         return pos_norm.unsqueeze(0).expand(X.shape[0], -1, -1)
 
     def visual_tokens_spatial_similarity(self, images):
         """
-        input:  images: [B, C, H, W]  # 输入图像
+        input:  images: [B, C, H, W]  # Input images
         output: hidden_states_filtered: [B, num_tokens, hidden_dim]
         output: clustered_labels: [B, num_clusters]
         """
-        #set hooks for extracting desired layer's k
+        # Set hooks for extracting desired layer's k
         hook_handle_k = self.vision_tower.vision_model.encoder.layers[-2].self_attn.k_proj.register_forward_hook(hook_k)
         image_forward_outs = self.vision_tower(images.to(device=self.device, dtype=self.dtype), output_hidden_states=True, output_attentions=True)
         attn_weights  = image_forward_outs.attentions[-2]
         hidden_states = image_forward_outs.hidden_states[-2]
 
-        #extract desired layer's k compute similarity
+        # Extract desired layer's k and compute similarity
         desired_layer_k = outputs["desired_k"]
         # print(f"desired_layer_k shape: {desired_layer_k.shape}")
         hook_handle_k.remove()
@@ -191,17 +204,16 @@ class CLIPVisionTower(nn.Module):
         metric = desired_layer_k
         device = hidden_states.device
 
-        ### 过滤cls tokens
+        ### Filter out CLS tokens
         cls_attention = attn_weights[:, :, 0, 1:]  
         cls_attention_sum = cls_attention.sum(dim=1)
         hidden_states_filtered = hidden_states[:, 1:, :].view(
             hidden_states.shape[0], -1, hidden_states.shape[2]
         )
         metric_filtered = metric[:, 1:, :].view(hidden_states_filtered.shape[0], -1, metric.shape[2])
-        # metric_normalized = metric_filtered / metric_filtered.norm(dim=-1, keepdim=True)
         vision_pos = self.get_pos(hidden_states_filtered, W=24, H=24)
 
-        ## 保留 vision_retained_token 个 token
+        ## Keep vision_retained_token number of tokens
         vision_retained_token = int(self.vision_prune_ratio * hidden_states_filtered.shape[1])
         topk_indices = cls_attention_sum.topk(vision_retained_token, dim=1).indices
         mask = torch.ones_like(hidden_states_filtered[:, :, 0], dtype=torch.bool, device=metric.device).scatter_(1, topk_indices, False)
@@ -209,18 +221,18 @@ class CLIPVisionTower(nn.Module):
         metric_filtered = metric_filtered.masked_select(~mask.unsqueeze(-1)).view(hidden_states.shape[0], vision_retained_token, metric.shape[2])
         vision_pos_filtered = vision_pos.masked_select(~mask.unsqueeze(-1)).view(hidden_states.shape[0], vision_retained_token, vision_pos.shape[2])
 
-        ## 使用聚类算法进行token的选择
+        ## Use clustering algorithm for token selection
         clustered_labels = []
         for i in range(hidden_states_filtered.shape[0]):
 
             sample_metric = metric_filtered[i]
             sample_pos = vision_pos_filtered[i]
             
-            # 执行VIC聚类
+            # Perform VIC clustering
             from .utils import VIC
-            dc = 8 # 直径阈值
-            percentage=self.cluster_percentage # 聚类中心点百分比数量
-            k=0.6 # 空间约束系数
+            dc = 8 # Diameter threshold
+            percentage = self.cluster_percentage # Percentage of points to be cluster centers
+            k = 0.6 # Spatial constraint coefficient
             vic = VIC(dc=dc, percentage=percentage, k=k)
             vic.fit(X=sample_metric, pos=sample_pos)
             labels = vic.labels_
@@ -246,11 +258,11 @@ class CLIPVisionTower(nn.Module):
         ## VITCOP
         elif self.use_vitcop:
             image_features, cluster_labels = self.visual_tokens_spatial_similarity(images)
-            ## 处理多张图像的情况
+            ## Handle the case of multiple images
             if image_features.shape[0] > 1:
-                # 创建偏移量张量
+                # Create an offset tensor
                 offsets = torch.arange(image_features.shape[0], device=cluster_labels.device) * image_features.shape[1]
-                # 使用广播机制加上偏移量
+                # Add the offset using broadcasting
                 cluster_labels = (cluster_labels + offsets.unsqueeze(1)).flatten().unsqueeze(0)
                 # print(f"cluster_labels shape: {cluster_labels.shape}")
         ## VITCOP
@@ -291,7 +303,6 @@ class CLIPVisionTower(nn.Module):
     @property
     def num_patches(self):
         return (self.config.image_size // self.config.patch_size) ** 2
-
 
 
 class CLIPVisionTowerS2(CLIPVisionTower):

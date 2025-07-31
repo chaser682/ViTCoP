@@ -1,19 +1,19 @@
-#!bin/bash
+#!/bin/bash
 set -x
-EXP_TABLE=coco2017_cap_val
+EXP_TABLE=pope
 LOG_DIR=./logs/vitcop
 MODEL_NAME="/home/chaser/model/llava-v1.5-7b"
 RUN_NAME=vitcop_llava_1.5_7b_efficiency
 
 ################################################
 ## VITCOP
-## 计算剪枝率为 1/9 的token 下的效率分析
+## Efficiency analysis for tokens with a 1/9 pruning rate
 RATIO=("1_9")
 PRUNED_RARIOS=(0.1111)
 VISION_PRUNE_RARIOS=(0.3)
 CLUSTER_PERCENTAGES=(0.12)
 SHALLOW_PRUNED_LAYER=2
-DEEP_PRUNED_LAYER=22  
+DEEP_PRUNED_LAYER=22
 ################################################
 
 for ((i=0; i<${#RATIO[@]}; i++)); do
@@ -31,7 +31,7 @@ for ((i=0; i<${#RATIO[@]}; i++)); do
         -m lmms_eval \
         --model llava \
         --model_args pretrained=$MODEL_NAME \
-        --tasks vqav2_val_lite \
+        --tasks gqa_lite \
         --batch_size 1 \
         --log_samples \
         --log_samples_suffix ${RUN_NAME}_${RATIO_VALUE} \
