@@ -1,5 +1,16 @@
-<h1 style="text-align:center">ViTCoP: Accelerating Large Vision-Language Models via Visual and Textual
+<h1 style="text-align:center">🔥 ViTCoP: Accelerating Large Vision-Language Models via Visual and Textual
 Semantic Collaborative Pruning</h1>
+
+<p align="center">
+  <b>ViTCoP has been accepted to <a href="https://aaai.org/aaai-conference/">AAAI 2026</a>! 🎉</b><br>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Status-Accepted%20at%20AAAI%202026-brightgreen.svg">
+  <img src="https://img.shields.io/badge/PyTorch-2.1.2-red.svg">
+  <img src="https://img.shields.io/badge/License-MIT-blue.svg">
+  <img src="https://img.shields.io/badge/Model-Large%20Vision--Language%20Models-purple.svg">
+</p>
 
 # Abstract
 Large Vision-Language Models (LVLMs) incur high computational costs due to significant redundancy in their visual tokens. To effectively reduce this cost, researchers have proposed various visual token pruning methods. However, existing methods are generally limited, either losing criticalvisual information prematurely due to pruning in the vision encoder, or leading to information redundancy among the selected tokens due to pruning in the Large Language Models
@@ -38,3 +49,7 @@ bash eval/vitcop_efficiency.sh
 
 # References
 The code is implemented based on [lmms-eval](https://github.com/EvolvingLMMs-Lab/lmms-eval), [LLaVA](https://github.com/haotian-liu/LLaVA), [SparseVLM](https://github.com/Gumpest/SparseVLMs) and [VisionZip](https://github.com/dvlab-research/VisionZip). We thanks the contributors for their great work!
+
+# Citation
+> TODO
+
