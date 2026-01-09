@@ -50,5 +50,15 @@ bash eval/vitcop_efficiency.sh
 The code is implemented based on [lmms-eval](https://github.com/EvolvingLMMs-Lab/lmms-eval), [LLaVA](https://github.com/haotian-liu/LLaVA), [SparseVLM](https://github.com/Gumpest/SparseVLMs) and [VisionZip](https://github.com/dvlab-research/VisionZip). We thanks the contributors for their great work!
 
 # Citation
-> TODO
+
+```txt
+@inproceedings{
+anonymous2025vitcop,
+title={Vi{TC}oP: Accelerating Large Vision-Language Models via Visual and Textual Semantic Collaborative Pruning},
+author={Anonymous},
+booktitle={The Fortieth AAAI Conference on Artificial Intelligence},
+year={2025},
+url={https://openreview.net/forum?id=AeT5NA0PLH}
+}
+```
 
