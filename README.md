@@ -1,15 +1,10 @@
-<h1 style="text-align:center">🔥 ViTCoP: Accelerating Large Vision-Language Models via Visual and Textual
-Semantic Collaborative Pruning</h1>
-
-<p align="center">
-  <b>ViTCoP has been accepted to <a href="https://aaai.org/aaai-conference/">AAAI 2026</a>! 🎉</b><br>
-</p>
+<h1 align="center">🔥 ViTCoP: Accelerating Large Vision-Language Models via Visual and Textual Semantic Collaborative Pruning</h1>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Status-Accepted%20at%20AAAI%202026-brightgreen.svg">
+  <a href="https://arxiv.org/abs/2601.17818"><img src="https://img.shields.io/badge/arXiv-2601.17818-B31B1B.svg"></a>
   <img src="https://img.shields.io/badge/PyTorch-2.1.2-red.svg">
   <img src="https://img.shields.io/badge/License-MIT-blue.svg">
-  <img src="https://img.shields.io/badge/Model-Large%20Vision--Language%20Models-purple.svg">
 </p>
 
 # Abstract
