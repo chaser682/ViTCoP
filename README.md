@@ -52,13 +52,14 @@ The code is implemented based on [lmms-eval](https://github.com/EvolvingLMMs-Lab
 # Citation
 
 ```txt
-@inproceedings{
-anonymous2025vitcop,
-title={Vi{TC}oP: Accelerating Large Vision-Language Models via Visual and Textual Semantic Collaborative Pruning},
-author={Anonymous},
-booktitle={The Fortieth AAAI Conference on Artificial Intelligence},
-year={2025},
-url={https://openreview.net/forum?id=AeT5NA0PLH}
+@misc{luo2026vitcopacceleratinglargevisionlanguage,
+      title={ViTCoP: Accelerating Large Vision-Language Models via Visual and Textual Semantic Collaborative Pruning}, 
+      author={Wen Luo and Peng Chen and Xiaotao Huang and LiQun Huang},
+      year={2026},
+      eprint={2601.17818},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2601.17818}, 
 }
 ```
 
